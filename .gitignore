@@ -1,0 +1,14 @@
+# Python / Virtual Environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Java / Spring Boot
+target/
+.mvn/
+mvnw
+mvnw.cmd
+.idea/
+*.class

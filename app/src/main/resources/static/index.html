@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NETRA — AI Underwater Image Enhancement</title>
+  <meta name="description" content="Project NETRA: Physics-guided AI enhancement for underwater imagery. Powered by Morphological Pyramid Reconstruction and Laplacian-Gaussian fusion." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* =====================================================================
+       DESIGN TOKENS
+    ===================================================================== */
+    :root {
+      --bg:          #020c1b;
+      --bg2:         #071428;
+      --surface:     rgba(7, 20, 48, 0.78);
+      --surface2:    rgba(10, 30, 65, 0.60);
+      --cyan:        #00c8ff;
+      --teal:        #00ffb3;
+      --purple:      #6e56ff;
+      --txt:         #ddeeff;
+      --txt2:        #7eaac8;
+      --txt3:        #3a607e;
+      --border:      rgba(0, 200, 255, 0.16);
+      --border-h:    rgba(0, 200, 255, 0.50);
+      --err:         #ff4d6d;
+      --r:           20px;
+      --r-sm:        12px;
+      --shadow:      0 8px 48px rgba(0, 0, 0, 0.55);
+      --glow:        0 0 48px rgba(0, 200, 255, 0.10);
+      --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+      --fn:          'Outfit', sans-serif;
+      --fm:          'JetBrains Mono', monospace;
+    }
+
+    /* =====================================================================
+       RESET & BASE
+    ===================================================================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--fn);
+      background: var(--bg);
+      color: var(--txt);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* =====================================================================
+       ANIMATED BACKGROUND
+    ===================================================================== */
+    .bg-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .bg-grad {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 5%,  rgba(0, 80, 180, 0.22) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 90%, rgba(0, 150, 100, 0.14) 0%, transparent 60%),
+        linear-gradient(180deg, #020c1b 0%, #030f24 60%, #020c1b 100%);
+      animation: bgBreath 14s ease-in-out infinite alternate;
+    }
+    @keyframes bgBreath {
+      from { opacity: 1; }
+      to   { opacity: 0.82; filter: hue-rotate(12deg); }
+    }
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 180, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 180, 255, 0.035) 1px, transparent 1px);
+      background-size: 56px 56px;
+    }
+    #particles { position: absolute; inset: 0; }
+    .particle {
+      position: absolute;
+      bottom: -10px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 210, 255, 0.75) 0%, rgba(0, 160, 255, 0.15) 100%);
+      animation: bubbleRise linear infinite;
+    }
+    @keyframes bubbleRise {
+      0%   { transform: translateY(0)       translateX(0);           opacity: 0;   }
+      6%   { opacity: 1; }
+      94%  { opacity: 0.45; }
+      100% { transform: translateY(-106vh)  translateX(var(--drift)); opacity: 0; }
+    }
+
+    /* =====================================================================
+       LAYOUT
+    ===================================================================== */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 44px 22px 90px;
+    }
+
+    /* =====================================================================
+       HEADER
+    ===================================================================== */
+    header { text-align: center; margin-bottom: 52px; }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .logo-gem {
+      width: 54px; height: 54px;
+      border-radius: 15px;
+      background: linear-gradient(135deg, var(--cyan), var(--teal));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      box-shadow: 0 0 32px rgba(0,200,255,0.45), 0 0 70px rgba(0,200,255,0.12);
+      animation: gemGlow 3.5s ease-in-out infinite alternate;
+      flex-shrink: 0;
+    }
+    @keyframes gemGlow {
+      from { box-shadow: 0 0 24px rgba(0,200,255,0.35), 0 0 50px rgba(0,200,255,0.10); }
+      to   { box-shadow: 0 0 48px rgba(0,200,255,0.65), 0 0 90px rgba(0,200,255,0.20); }
+    }
+    .logo-name {
+      font-size: 2.6rem;
+      font-weight: 900;
+      letter-spacing: 0.10em;
+      background: linear-gradient(130deg, #fff 15%, var(--cyan) 55%, var(--teal) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    h1 {
+      font-size: clamp(1.4rem, 3.5vw, 2rem);
+      font-weight: 600;
+      color: var(--txt);
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+    .tech-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tbadge {
+      padding: 3px 12px;
+      border-radius: 100px;
+      border: 1px solid rgba(0,200,255,0.22);
+      background: rgba(0,200,255,0.07);
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--cyan);
+      letter-spacing: 0.04em;
+    }
+
+    /* =====================================================================
+       GLASS CARD
+    ===================================================================== */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      box-shadow: var(--shadow), var(--glow);
+      transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+    }
+
+    /* =====================================================================
+       UPLOAD CARD
+    ===================================================================== */
+    #uploadCard { margin-bottom: 20px; overflow: hidden; }
+
+    /* — Drop zone — */
+    #dropZone {
+      position: relative;
+      padding: 58px 36px;
+      text-align: center;
+      cursor: pointer;
+      border: 2px dashed var(--border);
+      border-radius: 18px;
+      margin: 16px;
+      background: rgba(0,200,255,0.015);
+      transition: all 0.28s var(--ease);
+      overflow: hidden;
+    }
+    /* Animated gradient border on hover/drag */
+    #dropZone::after {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 20px;
+      background: linear-gradient(90deg, var(--cyan), var(--teal), var(--purple), var(--cyan));
+      background-size: 300% 100%;
+      animation: borderFlow 3.5s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 0;
+    }
+    @keyframes borderFlow {
+      0%   { background-position: 0%   50%; }
+      100% { background-position: 300% 50%; }
+    }
+    #dropZone:hover, #dropZone.over {
+      border-color: transparent;
+      background: rgba(0,200,255,0.055);
+      box-shadow: 0 0 44px rgba(0,200,255,0.14), inset 0 0 44px rgba(0,200,255,0.03);
+    }
+    #dropZone:hover::after, #dropZone.over::after { opacity: 1; }
+    #dropZone.over { transform: scale(1.012); }
+    #dropZone > * { position: relative; z-index: 1; }
+
+    .dz-icon-wrap {
+      width: 76px; height: 76px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(0,200,255,0.14), rgba(0,255,180,0.07));
+      border: 1px solid rgba(0,200,255,0.28);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px;
+      margin: 0 auto 20px;
+      animation: iconDrift 4.5s ease-in-out infinite;
+    }
+    @keyframes iconDrift {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50%       { transform: translateY(-9px) rotate(3deg); }
+    }
+    .dz-title { font-size: 1.12rem; font-weight: 600; margin-bottom: 7px; }
+    .dz-sub   { font-size: 0.87rem; color: var(--txt2); margin-bottom: 22px; }
+    .fmt-row  { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .fmt-pill {
+      padding: 3px 13px; border-radius: 100px;
+      border: 1px solid rgba(0,200,255,0.22);
+      background: rgba(0,200,255,0.08);
+      font-size: 0.76rem; font-weight: 600;
+      color: var(--cyan); font-family: var(--fm);
+    }
+    #fileInput { display: none; }
+
+    /* — File preview bar — */
+    #fileBar {
+      display: none;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+    }
+    #previewThumb {
+      width: 68px; height: 68px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .fmeta { flex: 1; min-width: 0; }
+    .fname {
+      font-weight: 600; font-size: 0.93rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 5px;
+    }
+    .fdetails {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      font-size: 0.80rem; color: var(--txt2);
+    }
+    .fdot {
+      display: inline-block;
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--cyan); opacity: 0.5; margin-right: 4px;
+      vertical-align: middle;
+    }
+    .btn-chg {
+      flex-shrink: 0;
+      padding: 7px 16px; border-radius: 9px;
+      border: 1px solid var(--border);
+      background: none; color: var(--txt2);
+      font-family: var(--fn); font-size: 0.82rem;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-chg:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* — Enhance button — */
+    .btn-enhance {
+      display: block; width: calc(100% - 32px);
+      margin: 0 16px 16px;
+      padding: 17px 32px;
+      border: none; border-radius: 13px;
+      font-family: var(--fn); font-size: 1.02rem; font-weight: 700;
+      letter-spacing: 0.04em; cursor: pointer;
+      background: linear-gradient(130deg, #0066cc, var(--cyan) 50%, var(--teal));
+      background-size: 220% 220%;
+      animation: btnFlow 5s ease infinite;
+      color: #fff;
+      box-shadow: 0 4px 28px rgba(0,200,255,0.30);
+      transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), background 0.3s;
+    }
+    @keyframes btnFlow {
+      0%   { background-position: 0%   50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0%   50%; }
+    }
+    .btn-enhance:disabled {
+      background: rgba(255,255,255,0.05);
+      color: var(--txt3); cursor: not-allowed;
+      box-shadow: none; animation: none;
+    }
+    .btn-enhance:not(:disabled):hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 44px rgba(0,200,255,0.42);
+    }
+    .btn-enhance:not(:disabled):active { transform: translateY(0); }
+
+    /* =====================================================================
+       STATUS PANEL
+    ===================================================================== */
+    #statusPanel {
+      display: none;
+      align-items: center;
+      gap: 22px;
+      padding: 22px 26px;
+      margin-bottom: 20px;
+    }
+    .spinner {
+      width: 42px; height: 42px; flex-shrink: 0;
+      border: 3px solid rgba(0,200,255,0.14);
+      border-top-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .s-info { flex: 1; }
+    .s-title { font-weight: 600; font-size: 1rem; margin-bottom: 12px; }
+    .s-steps { display: flex; flex-wrap: wrap; gap: 7px; }
+    .sbadge {
+      padding: 3px 11px; border-radius: 100px;
+      font-size: 0.74rem; font-family: var(--fm);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.09);
+      color: var(--txt3);
+      transition: all 0.4s;
+    }
+    .sbadge.active {
+      background: rgba(0,200,255,0.12);
+      border-color: rgba(0,200,255,0.42);
+      color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0,200,255,0.18);
+    }
+    .sbadge.done {
+      background: rgba(0,255,180,0.08);
+      border-color: rgba(0,255,180,0.30);
+      color: var(--teal);
+    }
+
+    /* =====================================================================
+       ERROR PANEL
+    ===================================================================== */
+    #errorPanel {
+      display: none;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 18px 22px;
+      margin-bottom: 20px;
+      background: rgba(255,77,109,0.08);
+      border: 1px solid rgba(255,77,109,0.28);
+      border-radius: var(--r-sm);
+      animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .e-icon { font-size: 20px; padding-top: 1px; }
+    .e-body {}
+    .e-title { font-weight: 600; font-size: 0.90rem; color: #ff8fa0; margin-bottom: 3px; }
+    .e-msg   { font-size: 0.84rem; color: rgba(255,180,190,0.75); font-family: var(--fm); }
+
+    /* =====================================================================
+       COMPARISON SECTION
+    ===================================================================== */
+    #cmpSection {
+      display: none;
+      animation: slideUp 0.55s var(--ease) both;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(32px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .sec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 22px 22px 0;
+      margin-bottom: 18px;
+    }
+    .sec-title {
+      font-size: 1.25rem; font-weight: 700;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sec-title::before {
+      content: '';
+      display: block;
+      width: 4px; height: 22px; border-radius: 2px;
+      background: linear-gradient(to bottom, var(--cyan), var(--teal));
+    }
+
+    /* View toggle pills */
+    .vtog {
+      display: flex;
+      background: rgba(0,200,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 3px; gap: 2px;
+    }
+    .vbtn {
+      padding: 6px 20px; border-radius: 100px;
+      border: none; background: none;
+      font-family: var(--fn); font-size: 0.82rem; font-weight: 500;
+      color: var(--txt2); cursor: pointer;
+      transition: all 0.22s;
+    }
+    .vbtn.on {
+      background: linear-gradient(130deg, var(--cyan), var(--teal));
+      color: #001a10; font-weight: 700;
+    }
+
+    /* — Side-by-side — */
+    #sbs {
+      display: grid;
+      grid-template-columns: 1fr 44px 1fr;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin: 0 16px 16px;
+    }
+    .ipanel {
+      position: relative;
+      background: #000;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+    }
+    .ipanel img {
+      width: 100%; height: 100%;
+      object-fit: contain; display: block;
+    }
+    .plabel {
+      position: absolute; top: 12px; left: 12px; z-index: 2;
+      padding: 4px 13px; border-radius: 100px;
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      backdrop-filter: blur(8px);
+    }
+    .plabel.orig {
+      background: rgba(0,0,0,0.60);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.88);
+    }
+    .plabel.enh {
+      background: rgba(0,200,255,0.18);
+      border: 1px solid rgba(0,200,255,0.46);
+      color: var(--cyan);
+    }
+    .vs-col {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--bg2); position: relative;
+    }
+    .vs-col::before, .vs-col::after {
+      content: '';
+      position: absolute; left: 50%; transform: translateX(-50%);
+      width: 1px;
+      background: linear-gradient(to bottom, transparent, rgba(0,200,255,0.38), transparent);
+    }
+    .vs-col::before { top: 0; bottom: 55%; }
+    .vs-col::after  { top: 55%; bottom: 0; }
+    .vs-gem {
+      width: 36px; height: 36px; border-radius: 50%; z-index: 1;
+      background: linear-gradient(135deg, var(--bg), var(--bg2));
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 800; color: var(--cyan);
+      letter-spacing: 0.03em;
+    }
+
+    /* — Slider comparison — */
+    #sliderView {
+      display: none;
+      margin: 0 16px 16px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .sl-wrap {
+      position: relative;
+      overflow: hidden;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      cursor: ew-resize;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .sl-enhanced {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: contain; display: block;
+    }
+    .sl-orig-clip {
+      position: absolute; top: 0; left: 0;
+      height: 100%; overflow: hidden;
+      width: 50%;
+    }
+    .sl-orig {
+      display: block; height: 100%;
+      max-width: none; object-fit: contain;
+    }
+    .sl-handle {
+      position: absolute; top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 48px; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; z-index: 10;
+    }
+    .sl-line {
+      position: absolute; top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 2px; height: 100%;
+      background: linear-gradient(to bottom, transparent 0%, var(--cyan) 20%, var(--teal) 80%, transparent 100%);
+    }
+    .sl-knob {
+      width: 44px; height: 44px; border-radius: 50%; position: relative; z-index: 2;
+      background: linear-gradient(135deg, var(--cyan), var(--teal));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; color: #001820; font-weight: 800;
+      box-shadow: 0 0 24px rgba(0,200,255,0.55);
+    }
+    .sl-tag {
+      position: absolute; top: 12px;
+      padding: 4px 13px; border-radius: 100px;
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      backdrop-filter: blur(8px);
+    }
+    .sl-tag.left {
+      left: 12px;
+      background: rgba(0,0,0,0.60); border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.85);
+    }
+    .sl-tag.right {
+      right: 12px;
+      background: rgba(0,200,255,0.18); border: 1px solid rgba(0,200,255,0.42);
+      color: var(--cyan);
+    }
+    .sl-hint {
+      text-align: center; padding: 10px;
+      font-size: 0.77rem; color: var(--txt3);
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+    }
+
+    /* =====================================================================
+       METADATA PANEL
+    ===================================================================== */
+    #metaPanel {
+      margin: 0 16px;
+      padding: 20px 22px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .mb { }
+    .mb-label {
+      font-size: 0.69rem; text-transform: uppercase;
+      letter-spacing: 0.09em; color: var(--txt3);
+      font-weight: 700; margin-bottom: 6px;
+    }
+    .mb-val {
+      font-family: var(--fm); font-size: 0.82rem;
+      color: var(--cyan); line-height: 1.65;
+      word-break: break-all;
+    }
+    .mb-val.time {
+      font-size: 1.55rem; font-weight: 700;
+      color: var(--teal); font-family: var(--fm);
+    }
+    .mb-val.time sub { font-size: 0.72rem; color: var(--txt3); font-weight: 400; }
+    .mb-steps { grid-column: 1 / -1; }
+    .steps-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
+    .spill {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 13px; border-radius: 100px;
+      font-size: 0.74rem; font-family: var(--fm);
+      background: rgba(0,200,255,0.07);
+      border: 1px solid rgba(0,200,255,0.20);
+      color: var(--cyan);
+    }
+    .spill::before { content: '✓'; color: var(--teal); font-size: 0.65rem; }
+
+    /* =====================================================================
+       ACTION BUTTONS
+    ===================================================================== */
+    .actions {
+      display: flex; gap: 12px;
+      padding: 16px 16px 20px;
+      flex-wrap: wrap;
+    }
+    .btn-dl {
+      flex: 1; min-width: 150px;
+      padding: 15px 24px; border: none; border-radius: 12px;
+      font-family: var(--fn); font-size: 0.95rem; font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--teal), #00cc88);
+      color: #001a10;
+      box-shadow: 0 4px 22px rgba(0,255,180,0.22);
+      transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-dl:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 36px rgba(0,255,180,0.38);
+    }
+    .btn-new {
+      padding: 15px 24px; border-radius: 12px;
+      border: 1px solid var(--border);
+      background: none; color: var(--txt2);
+      font-family: var(--fn); font-size: 0.95rem; font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.22s, color 0.22s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .btn-new:hover { border-color: var(--cyan); color: var(--txt); }
+
+    /* =====================================================================
+       FOOTER
+    ===================================================================== */
+    footer {
+      text-align: center;
+      margin-top: 56px;
+      font-size: 0.78rem;
+      color: var(--txt3);
+      letter-spacing: 0.03em;
+    }
+    footer span { color: var(--txt2); }
+
+    /* =====================================================================
+       RESPONSIVE
+    ===================================================================== */
+    @media (max-width: 660px) {
+      #sbs {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 44px 1fr;
+      }
+      .vs-col {
+        width: 100%; height: 44px;
+        flex-direction: row;
+      }
+      .vs-col::before { top: 50%; bottom: 50%; left: 0;   right: 55%; width: auto; height: 1px; }
+      .vs-col::after  { top: 50%; bottom: 50%; left: 55%; right: 0;   width: auto; height: 1px; }
+      #metaPanel { grid-template-columns: 1fr; }
+      .mb-steps { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ───── Animated background ───── -->
+<div class="bg-wrap">
+  <div class="bg-grad"></div>
+  <div class="bg-grid"></div>
+  <div id="particles"></div>
+</div>
+
+<!-- ───── Page content ───── -->
+<div class="page">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo-row">
+      <div class="logo-gem">◈</div>
+      <span class="logo-name">NETRA</span>
+    </div>
+    <h1>AI-Powered Underwater Image Enhancement</h1>
+    <div class="tech-row">
+      <span class="tbadge">MPR Contrast</span>
+      <span class="tbadge">Gray World</span>
+      <span class="tbadge">Pyramid Fusion</span>
+      <span class="tbadge">Adaptive Gamma</span>
+      <span class="tbadge">FastAPI · Spring Boot</span>
+    </div>
+  </header>
+
+  <!-- UPLOAD CARD -->
+  <div class="card" id="uploadCard">
+
+    <!-- Drop zone -->
+    <div id="dropZone" role="button" aria-label="Upload image" tabindex="0">
+      <div class="dz-icon-wrap">🌊</div>
+      <p class="dz-title">Drop your underwater image here</p>
+      <p class="dz-sub">or click anywhere in this area to browse files</p>
+      <div class="fmt-row">
+        <span class="fmt-pill">JPG</span>
+        <span class="fmt-pill">PNG</span>
+        <span class="fmt-pill">WEBP</span>
+        <span class="fmt-pill">Max 10 MB</span>
+      </div>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" aria-hidden="true">
+    </div>
+
+    <!-- File preview bar (hidden until file selected) -->
+    <div id="fileBar">
+      <img id="previewThumb" src="" alt="Preview thumbnail">
+      <div class="fmeta">
+        <div class="fname" id="fname">—</div>
+        <div class="fdetails">
+          <span><span class="fdot"></span><span id="fsize">—</span></span>
+          <span><span class="fdot"></span><span id="ftype">—</span></span>
+        </div>
+      </div>
+      <button class="btn-chg" id="changeBtn" aria-label="Change file">Change file</button>
+    </div>
+
+    <!-- Enhance button -->
+    <button class="btn-enhance" id="enhanceBtn" disabled aria-label="Run enhancement pipeline">
+      ✦ &nbsp;Enhance Image
+    </button>
+
+  </div><!-- /uploadCard -->
+
+  <!-- STATUS PANEL -->
+  <div class="card" id="statusPanel">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="s-info">
+      <div class="s-title">Running NETRA enhancement pipeline…</div>
+      <div class="s-steps" id="sSteps" aria-live="polite">
+        <span class="sbadge" data-s="decode">decode</span>
+        <span class="sbadge" data-s="color_balance">color_balance</span>
+        <span class="sbadge" data-s="mpr">mpr</span>
+        <span class="sbadge" data-s="unsharp">unsharp</span>
+        <span class="sbadge" data-s="pyramid_fusion">pyramid_fusion</span>
+        <span class="sbadge" data-s="adaptive_gamma">adaptive_gamma</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERROR PANEL -->
+  <div id="errorPanel" role="alert">
+    <div class="e-icon">⚠</div>
+    <div class="e-body">
+      <div class="e-title">Enhancement failed</div>
+      <div class="e-msg" id="eMsg">An error occurred.</div>
+    </div>
+  </div>
+
+  <!-- COMPARISON SECTION -->
+  <div class="card" id="cmpSection">
+
+    <!-- Section header + view toggle -->
+    <div class="sec-head">
+      <div class="sec-title">Enhancement Results</div>
+      <div class="vtog" role="group" aria-label="View mode">
+        <button class="vbtn on" id="vtSide" onclick="switchView('side')" aria-pressed="true">Side by Side</button>
+        <button class="vbtn"    id="vtSlide" onclick="switchView('slide')" aria-pressed="false">Slider Compare</button>
+      </div>
+    </div>
+
+    <!-- Side-by-side -->
+    <div id="sbs">
+      <div class="ipanel">
+        <div class="plabel orig">Original</div>
+        <img id="origImg" src="" alt="Original degraded underwater image">
+      </div>
+      <div class="vs-col"><div class="vs-gem">VS</div></div>
+      <div class="ipanel">
+        <div class="plabel enh">Enhanced ✦</div>
+        <img id="enhImg" src="" alt="NETRA enhanced image">
+      </div>
+    </div>
+
+    <!-- Slider compare -->
+    <div id="sliderView">
+      <div class="sl-wrap" id="slWrap">
+        <img class="sl-enhanced" id="slEnh" src="" alt="Enhanced">
+        <div class="sl-orig-clip" id="slClip">
+          <img class="sl-orig" id="slOrig" src="" alt="Original">
+        </div>
+        <div class="sl-handle" id="slHandle">
+          <div class="sl-line"></div>
+          <div class="sl-knob">⇔</div>
+        </div>
+        <span class="sl-tag left">Original</span>
+        <span class="sl-tag right">Enhanced</span>
+      </div>
+      <div class="sl-hint">◂ &nbsp;Drag the handle left or right to compare &nbsp;▸</div>
+    </div>
+
+    <!-- Metadata -->
+    <div id="metaPanel">
+      <div class="mb">
+        <div class="mb-label">Processing Time</div>
+        <div class="mb-val time" id="mTime">—<sub>ms</sub></div>
+      </div>
+      <div class="mb">
+        <div class="mb-label">Output Format</div>
+        <div class="mb-val" id="mFmt">—</div>
+      </div>
+      <div class="mb mb-steps">
+        <div class="mb-label">Pipeline Steps Executed</div>
+        <div class="steps-wrap" id="mSteps"></div>
+      </div>
+    </div>
+
+    <!-- Action row -->
+    <div class="actions">
+      <button class="btn-dl"  id="dlBtn"  aria-label="Download enhanced image">⬇ &nbsp;Download Enhanced Image</button>
+      <button class="btn-new" id="newBtn" aria-label="Process another image">✦ &nbsp;Process Another Image</button>
+    </div>
+
+  </div><!-- /cmpSection -->
+
+  <footer>
+    Project <span>NETRA</span> &nbsp;·&nbsp; Physics-guided AI for underwater vision
+    &nbsp;·&nbsp; <span>Spring Boot</span> + <span>FastAPI</span>
+  </footer>
+
+</div><!-- /page -->
+
+<script>
+/* =======================================================================
+   CONFIGURATION
+======================================================================= */
+const API_BASE    = 'http://localhost:8080';
+const ENHANCE_URL = `${API_BASE}/api/v1/netra/enhance`;
+
+/* =======================================================================
+   STATE
+======================================================================= */
+let selectedFile    = null;
+let origDataUrl     = null;   // FileReader data-URL for original preview
+let enhBlobUrl      = null;   // Object URL for enhanced image
+let enhBlob         = null;   // Raw Blob for download
+
+/* =======================================================================
+   DOM REFERENCES
+======================================================================= */
+const $ = id => document.getElementById(id);
+const dropZone   = $('dropZone');
+const fileInput  = $('fileInput');
+const fileBar    = $('fileBar');
+const prevThumb  = $('previewThumb');
+const fnameEl    = $('fname');
+const fsizeEl    = $('fsize');
+const ftypeEl    = $('ftype');
+const changeBtn  = $('changeBtn');
+const enhBtn     = $('enhanceBtn');
+const statusP    = $('statusPanel');
+const errorP     = $('errorPanel');
+const eMsgEl     = $('eMsg');
+const cmpSec     = $('cmpSection');
+const origImg    = $('origImg');
+const enhImg     = $('enhImg');
+const mTime      = $('mTime');
+const mFmt       = $('mFmt');
+const mSteps     = $('mSteps');
+const dlBtn      = $('dlBtn');
+const newBtn     = $('newBtn');
+
+/* =======================================================================
+   BACKGROUND PARTICLES
+======================================================================= */
+(function spawnParticles() {
+  const container = $('particles');
+  for (let i = 0; i < 30; i++) {
+    const p     = document.createElement('div');
+    p.className = 'particle';
+    const size  = Math.random() * 5 + 2;
+    const drift = (Math.random() - 0.5) * 110;
+    p.style.cssText = [
+      `left:${Math.random() * 100}%`,
+      `width:${size}px`,
+      `height:${size}px`,
+      `--drift:${drift}px`,
+      `animation-delay:${(Math.random() * 16).toFixed(2)}s`,
+      `animation-duration:${(Math.random() * 12 + 15).toFixed(2)}s`,
+    ].join(';');
+    container.appendChild(p);
+  }
+})();
+
+/* =======================================================================
+   DROP ZONE — events
+======================================================================= */
+dropZone.addEventListener('click',    ()  => fileInput.click());
+dropZone.addEventListener('keydown',  e   => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+dropZone.addEventListener('dragover', e   => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave',()  => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop',     e   => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+changeBtn.addEventListener('click', () => fileInput.click());
+enhBtn.addEventListener('click', runEnhancement);
+dlBtn.addEventListener('click', downloadEnhanced);
+newBtn.addEventListener('click', resetAll);
+
+/* =======================================================================
+   FILE HANDLING
+======================================================================= */
+function handleFile(file) {
+  // Validate MIME type
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    showError(`Unsupported format "${file.type.split('/')[1] || file.type}". Please upload a JPG, PNG, or WebP image.`);
+    return;
+  }
+  // Validate size (10 MB)
+  if (file.size > 10 * 1024 * 1024) {
+    showError(`File is too large (${fmtBytes(file.size)}). The maximum allowed size is 10 MB.`);
+    return;
+  }
+
+  hideError();
+  selectedFile = file;
+
+  // Read as data URL for preview thumbnail and comparison
+  const reader = new FileReader();
+  reader.onload = e => {
+    origDataUrl       = e.target.result;
+    prevThumb.src     = origDataUrl;
+  };
+  reader.readAsDataURL(file);
+
+  fnameEl.textContent = file.name;
+  fsizeEl.textContent = fmtBytes(file.size);
+  ftypeEl.textContent = file.type.split('/')[1].toUpperCase();
+
+  fileBar.style.display  = 'flex';
+  enhBtn.disabled        = false;
+  enhBtn.textContent     = '✦  Enhance Image';
+
+  // Hide stale comparison results
+  cmpSec.style.display = 'none';
+}
+
+/* =======================================================================
+   ENHANCEMENT PIPELINE — main async flow
+======================================================================= */
+async function runEnhancement() {
+  if (!selectedFile) return;
+
+  hideError();
+  statusP.style.display = 'flex';
+  cmpSec.style.display  = 'none';
+  enhBtn.disabled       = true;
+  enhBtn.textContent    = 'Processing…';
+
+  /* Animate pipeline step badges sequentially */
+  const badges   = [...document.querySelectorAll('#sSteps .sbadge')];
+  badges.forEach(b => b.className = 'sbadge');
+  let si = 0;
+  const stepTimer = setInterval(() => {
+    if (si > 0) badges[si - 1].className = 'sbadge done';
+    if (si < badges.length) { badges[si].className = 'sbadge active'; si++; }
+  }, 400);
+
+  try {
+    const form = new FormData();
+    form.append('image', selectedFile);
+
+    const res = await fetch(ENHANCE_URL, { method: 'POST', body: form });
+
+    clearInterval(stepTimer);
+
+    if (!res.ok) {
+      let msg = `Server responded with ${res.status} ${res.statusText}.`;
+      try {
+        const j = await res.json();
+        msg = j.message || j.error || msg;
+      } catch (_) { /* body may not be JSON */ }
+      throw new Error(msg);
+    }
+
+    /* Extract NETRA metadata headers */
+    const procTime    = res.headers.get('X-NETRA-Processing-Time-Ms');
+    const stepsHdr    = res.headers.get('X-NETRA-Steps');
+    const contentType = res.headers.get('Content-Type') || 'image/jpeg';
+
+    /* Consume image blob */
+    enhBlob = await res.blob();
+    if (enhBlobUrl) URL.revokeObjectURL(enhBlobUrl);
+    enhBlobUrl = URL.createObjectURL(enhBlob);
+
+    /* Mark all steps done */
+    badges.forEach(b => b.className = 'sbadge done');
+    await pause(280);
+
+    renderResults(procTime, stepsHdr, contentType);
+
+  } catch (err) {
+    clearInterval(stepTimer);
+    showError(err.message || 'Enhancement failed. Make sure the Spring Boot backend is running on port 8080.');
+  } finally {
+    statusP.style.display = 'none';
+    enhBtn.disabled       = false;
+    enhBtn.textContent    = '✦  Enhance Image';
+  }
+}
+
+/* =======================================================================
+   RENDER COMPARISON
+======================================================================= */
+function renderResults(procTime, stepsHdr, contentType) {
+  /* Images */
+  origImg.src = origDataUrl;
+  enhImg.src  = enhBlobUrl;
+
+  /* Processing time */
+  if (procTime) {
+    mTime.innerHTML = `${parseFloat(procTime).toFixed(1)}<sub>ms</sub>`;
+  } else {
+    mTime.innerHTML = `—<sub>ms</sub>`;
+  }
+
+  /* Output format */
+  mFmt.textContent = (contentType.split('/')[1] || contentType).toUpperCase();
+
+  /* Pipeline steps pills */
+  mSteps.innerHTML = '';
+  if (stepsHdr) {
+    stepsHdr.split(',').map(s => s.trim()).filter(Boolean).forEach(step => {
+      const pill    = document.createElement('div');
+      pill.className = 'spill';
+      pill.textContent = step;
+      mSteps.appendChild(pill);
+    });
+  } else {
+    mSteps.innerHTML = '<span style="color:var(--txt3);font-size:0.8rem">— header not available —</span>';
+  }
+
+  /* Show section and scroll into view */
+  cmpSec.style.display = 'block';
+  switchView('side');
+
+  /* Pre-load slider images */
+  $('slOrig').src = origDataUrl;
+  $('slEnh').src  = enhBlobUrl;
+
+  setTimeout(() => cmpSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
+}
+
+/* =======================================================================
+   VIEW TOGGLE
+======================================================================= */
+function switchView(mode) {
+  const side  = $('sbs');
+  const slide = $('sliderView');
+  const vS    = $('vtSide');
+  const vL    = $('vtSlide');
+
+  if (mode === 'side') {
+    side.style.display   = 'grid';
+    slide.style.display  = 'none';
+    vS.classList.add('on');    vS.setAttribute('aria-pressed', 'true');
+    vL.classList.remove('on'); vL.setAttribute('aria-pressed', 'false');
+  } else {
+    side.style.display   = 'none';
+    slide.style.display  = 'block';
+    vS.classList.remove('on'); vS.setAttribute('aria-pressed', 'false');
+    vL.classList.add('on');    vL.setAttribute('aria-pressed', 'true');
+    initSlider();
+  }
+}
+
+/* =======================================================================
+   COMPARISON SLIDER — interactive drag
+======================================================================= */
+function initSlider() {
+  const wrap   = $('slWrap');
+  const clip   = $('slClip');
+  const handle = $('slHandle');
+  const oImg   = $('slOrig');
+
+  let dragging = false;
+
+  function moveTo(clientX) {
+    const { left, width } = wrap.getBoundingClientRect();
+    const pct = Math.max(4, Math.min(96, ((clientX - left) / width) * 100));
+
+    clip.style.width   = pct + '%';
+    handle.style.left  = pct + '%';
+
+    /* Keep the original image at the container's full pixel width so it
+       lines up exactly with the enhanced image underneath */
+    oImg.style.width  = width + 'px';
+    oImg.style.height = wrap.getBoundingClientRect().height + 'px';
+    oImg.style.objectFit = 'contain';
+  }
+
+  /* Seed at 50% */
+  const r = wrap.getBoundingClientRect();
+  moveTo(r.left + r.width / 2);
+
+  /* Mouse */
+  wrap.addEventListener('mousedown',  e => { dragging = true;  moveTo(e.clientX); });
+  window.addEventListener('mousemove', e => { if (dragging) moveTo(e.clientX); });
+  window.addEventListener('mouseup',  ()  => { dragging = false; });
+
+  /* Touch */
+  wrap.addEventListener('touchstart', e => { dragging = true;  moveTo(e.touches[0].clientX); }, { passive: true });
+  window.addEventListener('touchmove', e => { if (dragging) moveTo(e.touches[0].clientX); }, { passive: true });
+  window.addEventListener('touchend',  ()  => { dragging = false; });
+}
+
+/* =======================================================================
+   DOWNLOAD
+======================================================================= */
+function downloadEnhanced() {
+  if (!enhBlob || !enhBlobUrl) return;
+  const a    = document.createElement('a');
+  a.href     = enhBlobUrl;
+  const ext  = (mFmt.textContent || 'jpg').toLowerCase().replace('jpeg', 'jpg');
+  const base = (selectedFile?.name || 'image').replace(/\.[^.]+$/, '');
+  a.download = `netra_enhanced_${base}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/* =======================================================================
+   RESET
+======================================================================= */
+function resetAll() {
+  selectedFile = null;
+  origDataUrl  = null;
+  if (enhBlobUrl) { URL.revokeObjectURL(enhBlobUrl); enhBlobUrl = null; }
+  enhBlob = null;
+
+  fileInput.value        = '';
+  fileBar.style.display  = 'none';
+  cmpSec.style.display   = 'none';
+  statusP.style.display  = 'none';
+  enhBtn.disabled        = true;
+  enhBtn.textContent     = '✦  Enhance Image';
+  hideError();
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* =======================================================================
+   HELPERS
+======================================================================= */
+function showError(msg) {
+  eMsgEl.textContent         = msg;
+  errorP.style.display       = 'flex';
+}
+function hideError() {
+  errorP.style.display = 'none';
+}
+function fmtBytes(b) {
+  if (b < 1024)        return b + ' B';
+  if (b < 1048576)     return (b / 1024).toFixed(1)    + ' KB';
+  return                      (b / 1048576).toFixed(2)  + ' MB';
+}
+function pause(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
